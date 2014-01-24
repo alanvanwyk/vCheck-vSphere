@@ -5,7 +5,8 @@ param ([Switch]$config, $Outputpath)
 # Thanks to all who have commented on my blog to help improve this project
 # all beta testers and previous contributors to this script.
 #
-$Version = "6.16"
+# Added code for Database exports of results
+$Version = "6.17"
 $a = $host.PrivateData
 #
 # Grab the Warning foreground and background colors the user configured
@@ -87,9 +88,11 @@ Function Invoke-Settings ($Filename, $GB) {
 
 # Add all global variables.
 $ScriptPath = (Split-Path ((Get-Variable MyInvocation).Value).MyCommand.Path)
+$ProviderName = "VMWareVCheck"
 $PluginsFolder = $ScriptPath + "\Plugins\"
 $Plugins = Get-ChildItem -Path $PluginsFolder -filter "*.ps1" | Sort Name
 $GlobalVariables = $ScriptPath + "\GlobalVariables.ps1"
+
 
 
 
@@ -123,7 +126,7 @@ If ($SetupSetting) {
 
 . $GlobalVariables
 
-$vcvars = @("SetupWizard" , "Server" , "SMTPSRV" , "EmailFrom" , "EmailTo" , "EmailSubject", "DisplaytoScreen" , "SendEmail" , "SendAttachment" , "Colour1" , "Colour2" , "TitleTxtColour" , "TimeToRun" , "PluginSeconds" , "Style" , "Date")
+$vcvars = @("SetupWizard" , "Server" , "SMTPSRV" , "EmailFrom" , "EmailTo" , "EmailSubject", "DisplaytoScreen" , "SendEmail" , "SendAttachment" , "Colour1" , "Colour2" , "TitleTxtColour" , "TimeToRun" , "PluginSeconds" , "Style" , "SQLExport", "Date")
 foreach($vcvar in $vcvars) {
 	if (!($(Get-Variable -Name "$vcvar" -erroraction 'silentlycontinue'))) {
 		Write-Host "Variable `$$vcvar is not defined in GlobalVariables.ps1" -foregroundcolor "Red"
@@ -132,6 +135,35 @@ foreach($vcvar in $vcvars) {
 		Exit
 	} 
 }
+
+
+# If $SQLExport is required, check that Connection String file has been created and test connection to DB
+If($SQLExport -eq $true)
+    {
+    $SqlSCripts = $ScriptPath + "\SaveToDatabase.ps1"
+    . $SqlSCripts 
+    $SQLStringPath = $ScriptPath + "\SqlConnectionString.bin"
+    If (!(Test-Path $SQLStringPath -ErrorAction SilentlyContinue))
+        {
+        # Prompt for SQL Connection String and encrypt
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "Save To Database v1.0 by Alan van Wyk"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "==================================="
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "This is the first time DB backup has been requested"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "In order for succesful backup to DB, you'll need to provide an SQL connection string"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "The account writing to DB will require write access to the tables generated"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "If the tables do not exist, the account will need the rights to create the relevant tables"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "This connection string will be encrypted and only the account that creates the config" 
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "file will be able to decrypt it"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "In order to reset this, simply delete the file: $SQLStringPath"
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "This will be stored (encrypted) at:" 
+        Write-Host -foreground $Warning_Foreground -background $Warning_Background "For help with connection strings, see: http://www.connectionstrings.com/sql-server-2012/"
+        $stringIn = read-host "Please a provide valid Connection String"
+        Encrypt-String -string $stringIn -path $SQLStringPath
+        }
+    }
+
+
 
 $StylePath = $ScriptPath + "\Styles\" + $Style
 if(!(Test-Path ($StylePath))) {
@@ -187,45 +219,14 @@ Function Get-CustomHTMLClose{
 }
 
 Function Get-HTMLTable {
-	param([array]$Content, [array]$FormatRules)
-	
-	# If format rules are specified
-	if ($FormatRules) {
-		# Use an XML object for ease of use
-		$XMLTable = [xml]($content | ConvertTo-Html -Fragment)
-		$XMLTable.table.RemoveChild($XMLTable.table.colgroup) | out-null
-		
-		# Check each cell to see if there are any format rules
-		for ($RowN = 1; $RowN -lt $XMLTable.table.tr.count; $RowN++) {
-			for ($ColN = 0; $ColN -lt $XMLTable.table.tr[$RowN].td.count; $ColN++) {
-				if ( $Tableformat.keys -contains $XMLTable.table.tr[0].th[$ColN]) {
-					# Current cell has a rule, test to see if they are valid
-					foreach ( $rule in $Tableformat[$XMLTable.table.tr[0].th[$ColN]] ) {
-						if ( Invoke-Expression ("`$XMLTable.table.tr[`$RowN].td[`$ColN] {0}" -f [string]$rule.Keys) ) {
-							# Find what to 
-							$RuleScope = ([string]$rule.Values).split(",")[0]
-							$RuleActions = ([string]$rule.Values).split(",")[1].split("|")
-							
-							switch ($RuleScope) {
-								"Row"  { $XMLTable.table.tr[$RowN].SetAttribute($RuleActions[0], $RuleActions[1]) }
-								"Cell" { $XMLTable.table.tr[$RowN].selectSingleNode("td[$($ColN+1)]").SetAttribute($RuleActions[0], $RuleActions[1]) }
-							}
-						}
-					}
-				}
-			}	
-		}
-		return [string]($XMLTable.OuterXml)
-	}
-	else {
-		$HTMLTable = $Content | ConvertTo-Html -Fragment
-		$HTMLTable = $HTMLTable -Replace '<TABLE>', $HTMLTableReplace
-		$HTMLTable = $HTMLTable -Replace '<td>', $HTMLTdReplace
-		$HTMLTable = $HTMLTable -Replace '<th>', $HTMLThReplace
-		$HTMLTable = $HTMLTable -replace '&lt;', '<'
-		$HTMLTable = $HTMLTable -replace '&gt;', '>'
-		Return $HTMLTable
-	}
+	param([array]$Content)
+	$HTMLTable = $Content | ConvertTo-Html -Fragment
+	$HTMLTable = $HTMLTable -Replace '<TABLE>', $HTMLTableReplace
+	$HTMLTable = $HTMLTable -Replace '<td>', $HTMLTdReplace
+	$HTMLTable = $HTMLTable -Replace '<th>', $HTMLThReplace
+	$HTMLTable = $HTMLTable -replace '&lt;', '<'
+	$HTMLTable = $HTMLTable -replace '&gt;', '>'
+	Return $HTMLTable
 }
 
 Function Get-HTMLDetail ($Heading, $Detail){
@@ -238,7 +239,6 @@ $TTRReport = @()
 $MyReport = Get-CustomHTML "$Server vCheck"
 $MyReport += Get-CustomHeader0 ($Server)
 $Plugins | Foreach {
-   $TableFormat = $null
 	$IDinfo = Get-PluginID $_.Fullname
 	$Title = $IDinfo[0]
 	$Ver = $IDinfo[1]
@@ -252,7 +252,8 @@ $Plugins | Foreach {
 	$ver = "{0:N1}" -f $PluginVersion
 	Write-CustomOut "..finished calculating $Title by $Author v$Ver"
 
-	If ($Details) {
+	If ($Details) 
+    {
 		If ($Display -eq "List"){
 			$MyReport += Get-CustomHeader $Header $Comments
 			$AllProperties = $Details | Get-Member -MemberType Properties
@@ -263,10 +264,15 @@ $Plugins | Foreach {
 		}
 		If ($Display -eq "Table") {
 			$MyReport += Get-CustomHeader $Header $Comments
-			$MyReport += Get-HTMLTable $Details $TableFormat
+			$MyReport += Get-HTMLTable $Details
 			$MyReport += Get-CustomHeaderClose
 		}
-	}
+	If($SQLExport -eq $true)
+        {
+        Write-CustomOut "..writing Datastore Information to database by Alan van Wyk v1.0"
+        Export-ToVCheckDB -InputObject $Details -ProviderType $ProviderName -Description $Title -InstanceName $Server -CreateTableIfDoesNotExist -ConnectionString (Get-EncryptedString -path $SQLStringPath) 
+        }
+    }
 }	
 $MyReport += Get-CustomHeader ("This report took " + [math]::round(((Get-Date) - $Date).TotalMinutes,2) + " minutes to run all checks.") "The following plugins took longer than $PluginSeconds seconds to run, there may be a way to optimize these or remove them if not needed"
 $TTRReport = $TTRReport | Where { $_.TimeToRun -gt $PluginSeconds } | Sort-Object TimeToRun -Descending
