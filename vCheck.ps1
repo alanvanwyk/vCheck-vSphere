@@ -269,7 +269,7 @@ $Plugins | Foreach {
 		}
 	If($SQLExport -eq $true)
         {
-        Write-CustomOut "..writing Datastore Information to database by Alan van Wyk v1.0"
+        Write-CustomOut "..writing $Title to database by Alan van Wyk v1.0"
         Export-ToVCheckDB -InputObject $Details -ProviderType $ProviderName -Description $Title -InstanceName $Server -CreateTableIfDoesNotExist -ConnectionString (Get-EncryptedString -path $SQLStringPath) 
         }
     }
