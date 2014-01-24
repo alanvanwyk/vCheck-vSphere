@@ -1,4 +1,4 @@
-param ([Switch]$config, $Outputpath)
+param ([Switch]$config, $Outputpath, $GlobalVariableFile)
 ###############################
 # vCheck - Daily Error Report # 
 ###############################
@@ -91,7 +91,10 @@ $ScriptPath = (Split-Path ((Get-Variable MyInvocation).Value).MyCommand.Path)
 $ProviderName = "VMWareVCheck"
 $PluginsFolder = $ScriptPath + "\Plugins\"
 $Plugins = Get-ChildItem -Path $PluginsFolder -filter "*.ps1" | Sort Name
-$GlobalVariables = $ScriptPath + "\GlobalVariables.ps1"
+If($GlobalVariableFile)
+	{$GlobalVariables = $GlobalVariableFile}
+else
+	{$GlobalVariables = $ScriptPath + "\GlobalVariables.ps1"}
 
 
 
